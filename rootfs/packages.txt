@@ -15,3 +15,4 @@ parted
 openssh-server
 ethtool
 usbutils
+systemd-resolved
