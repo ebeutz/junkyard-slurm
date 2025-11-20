@@ -17,3 +17,5 @@ ethtool
 usbutils
 systemd-resolved
 sudo
+btrfs-progs
+tmux
