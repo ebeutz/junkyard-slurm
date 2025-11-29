@@ -64,25 +64,11 @@ _rootfs_built_sentinel := join(justfile_directory(), ".rootfs_built")
 [private]
 _create_rootfs_sentinel := join(justfile_directory(), ".create_rootfs")
 
-[working-directory('rootfs')]
-_mount_rootfs: _unmount_rootfs
-    if [ ! -d {{ _sysroot_dir }} ]; then \
-      eatmydata mkdir {{ _sysroot_dir }}; \
-    fi
-    if ! mountpoint -q {{ _sysroot_dir }}; then \
-      sudo mount {{ _sysroot_img }} {{ _sysroot_dir }}; \
-    fi
-
-[working-directory('rootfs')]
-_unmount_rootfs:
-    if mountpoint -q {{ _sysroot_dir }}; then \
-      sudo umount {{ _sysroot_dir }}; \
-    fi
-
 [group('rootfs')]
 [working-directory('rootfs')]
-clean_rootfs: _unmount_rootfs
-    rm -f {{ _rootfs_built_sentinel }} {{ _create_rootfs_sentinel }} {{ _sysroot_img }}
+clean_rootfs: 
+    eatmydata rm -f {{ _rootfs_built_sentinel }} {{ _create_rootfs_sentinel }} {{ _sysroot_img }}
+    sudo eatmydata rm -rf --one-file-system {{ _sysroot_dir }}
 
 [group('rootfs')]
 [working-directory('rootfs')]
@@ -118,7 +104,7 @@ _build_rootfs debootstrap_release root_password hostname size:
 
 [group('rootfs')]
 [working-directory('rootfs')]
-build_rootfs debootstrap_release="stable" root_password="0000" hostname="fold" size="4GiB": (create_rootfs_image size) _mount_rootfs && _unmount_rootfs
+build_rootfs debootstrap_release="stable" root_password="0000" hostname="fold" size="4GiB": (create_rootfs_image size) 
     # First stage
     @if [ ! -f {{ _rootfs_built_sentinel }} ]; then \
       just _build_rootfs {{ debootstrap_release }} {{ root_password }} {{ hostname }} {{ size }}; \
@@ -130,7 +116,7 @@ _module_order_path := join(justfile_directory(), "rootfs", "module_order.txt")
 # TODO: Download factory image and copy firmware
 [group('rootfs')]
 [working-directory('rootfs')]
-update_kernel_modules_and_source: _mount_rootfs && _unmount_rootfs
+update_kernel_modules_and_source: 
     sudo eatmydata mkdir -p {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}
     sudo eatmydata cp {{ _kernel_build_dir }}/modules.builtin {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/
     sudo eatmydata cp {{ _kernel_build_dir }}/modules.builtin.modinfo {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/
@@ -198,7 +184,7 @@ _module_order := replace(read(_module_order_path), "\n", " ")
 
 [group('rootfs')]
 [working-directory('rootfs')]
-update_initramfs: _mount_rootfs && _unmount_rootfs
+update_initramfs: 
     sudo eatmydata systemd-nspawn -D {{ _sysroot_dir }} eatmydata dracut \
       --kver {{ _kernel_version }} \
       --lz4 \
@@ -210,7 +196,7 @@ update_initramfs: _mount_rootfs && _unmount_rootfs
 
 [group('rootfs')]
 [working-directory('boot')]
-create_rootfs_image size="4GiB": _unmount_rootfs
+create_rootfs_image size="4GiB": 
     @if [ ! -f {{ _create_rootfs_sentinel }} ]; then \
       just _create_rootfs_image {{ size }}; \
     fi
@@ -220,12 +206,12 @@ create_rootfs_image size="4GiB": _unmount_rootfs
 _create_rootfs_image size="4GiB":
     sudo eatmydata rm -f {{ _sysroot_img }}
     sudo eatmydata fallocate -l {{ size }} {{ _sysroot_img }}
-    sudo eatmydata mkfs.btrfs {{ _sysroot_img }}
+    eatmydata mkdir {{ _sysroot_dir }}
     touch {{ _create_rootfs_sentinel }}
 
 [group('boot')]
 [working-directory('boot')]
-build_boot_images: _mount_rootfs && _unmount_rootfs
+build_boot_images: 
     sudo eatmydata {{ _mkbootimg }} \
       --kernel {{ _kernel_build_dir }}/Image.lz4 \
       --cmdline "root=/dev/disk/by-partlabel/super" \
@@ -244,3 +230,5 @@ build_boot_images: _mount_rootfs && _unmount_rootfs
       --pagesize 2048 \
       --os_version 15.0.0 \
       --os_patch_level 2025-02
+
+    sudo eatmydata mkfs.btrfs --rootdir {{ _sysroot_dir }} {{ _sysroot_img }}
