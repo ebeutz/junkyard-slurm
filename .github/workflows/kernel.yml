@@ -37,14 +37,21 @@ jobs:
         run: |
           sudo rm -f /var/lib/man-db/auto-update
           sudo apt update
-          sudo eatmydata apt install -y repo
+          sudo eatmydata apt install -y repo kmod
           sudo eatmydata cp just/just-x86_64 /usr/bin/just
 
       # Runs a set of commands using the runners shell
       - name: Compile kernel
         run: |
           eatmydata just build_kernel
+          eatmydata just update_kernel_modules_and_source
+
       - uses: actions/upload-artifact@v4
         with:
           name: kernel
+          path: kernel/kernel.tar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-out
           path: kernel/out/

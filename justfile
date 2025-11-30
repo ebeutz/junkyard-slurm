@@ -58,6 +58,8 @@ _sysroot_img := join(justfile_directory(), "boot", "rootfs.img")
 [private]
 _sysroot_dir := join(justfile_directory(), "rootfs", "sysroot")
 [private]
+_syskern_dir := join(justfile_directory(), "kernel", "syskern")
+[private]
 _user := env("USER")
 [private]
 _rootfs_built_sentinel := join(justfile_directory(), ".rootfs_built")
@@ -82,6 +84,7 @@ _build_rootfs debootstrap_release root_password hostname size:
       --hook-dir=/usr/share/mmdebstrap/hooks/eatmydata \
       --include="/tmp/kmscon_9.0.0-5+b2_arm64.deb" \
       --hook-dir=/usr/share/mmdebstrap/hooks/file-mirror-automount \
+      --customize-hook='tar-in {{ _kernel_tar }} /' \
       --customize-hook='echo {{ hostname }} > "$1/etc/hostname"' \
       --customize-hook='echo root:{{ root_password }} | chpasswd -R "$1"' \
       --customize-hook='useradd -R "$1" -m -s /bin/bash -G sudo kalm' \
@@ -98,6 +101,7 @@ _build_rootfs debootstrap_release root_password hostname size:
       --customize-hook='mkdir -p "$1/etc/systemd/system/kmsconvt@.service.d" && printf "[Service]\nExecStart=\nExecStart=/usr/bin/kmscon \"--vt=%%I\" --seats=seat0 --no-switchvt --login -- /sbin/agetty -a kalm - xterm-256color\n" > "$1/etc/systemd/system/kmsconvt@.service.d/override.conf"' \
       --customize-hook='mkdir -p "$1/etc/systemd/system/adbd.service.d" && printf "[Unit]\nWants=sys-kernel-config.mount\nAfter=\n" > "$1/etc/systemd/system/adbd.service.d/override.conf"' \
       --customize-hook='ln -s /dev/null "$1/etc/systemd/system/systemd-backlight@.service"' \
+      --customize-hook='chroot "$1" dracut --kver {{ _kernel_version }} --show-modules --force' \
       {{ _sysroot_dir }}
 
     touch {{ _rootfs_built_sentinel }}
@@ -111,18 +115,21 @@ build_rootfs debootstrap_release="stable" root_password="0000" hostname="fold" s
     fi
 
 [private]
-_module_order_path := join(justfile_directory(), "rootfs", "module_order.txt")
+_module_order_path := join(justfile_directory(), "kernel", "module_order.txt")
+[private]
+_kernel_tar := join(justfile_directory(), "kernel", "kernel.tar")
 
 # TODO: Download factory image and copy firmware
-[group('rootfs')]
-[working-directory('rootfs')]
+[group('kernel')]
+[working-directory('kernel')]
 update_kernel_modules_and_source: 
-    sudo eatmydata mkdir -p {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}
-    sudo eatmydata cp {{ _kernel_build_dir }}/modules.builtin {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/
-    sudo eatmydata cp {{ _kernel_build_dir }}/modules.builtin.modinfo {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/
+    eatmydata mkdir -p {{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}
+    eatmydata ln -s {{ _syskern_dir }}/usr/lib {{ _syskern_dir }}/lib
+    eatmydata cp {{ _kernel_build_dir }}/modules.builtin {{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/
+    eatmydata cp {{ _kernel_build_dir }}/modules.builtin.modinfo {{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/
 
-    sudo eatmydata rm -f {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/modules.order
-    sudo eatmydata touch {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/modules.order
+    eatmydata rm -f {{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/modules.order
+    eatmydata touch {{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/modules.order
 
     @echo "Copying modules"
     for staging in vendor_dlkm system_dlkm; \
@@ -131,48 +138,56 @@ update_kernel_modules_and_source:
       eatmydata tar \
         -xvzf {{ _kernel_build_dir }}/"$staging"_staging_archive.tar.gz \
         -C unpack/"$staging"; \
-      sudo eatmydata {{ _rsync }} -avK --ignore-existing  --include='*/' --include='*.ko' --exclude='*' unpack/"$staging"/ {{ _sysroot_dir }}/; \
-      sudo eatmydata sh -c "cat unpack/\"$staging\"/lib/modules/{{ _kernel_version }}/modules.order \
-        >> {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/modules.order"; \
+      eatmydata {{ _rsync }} -avK --ignore-existing  --include='*/' --include='*.ko' --exclude='*' unpack/"$staging"/ {{ _syskern_dir }}/usr/; \
+      eatmydata sh -c "cat unpack/\"$staging\"/lib/modules/{{ _kernel_version }}/modules.order \
+        >> {{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/modules.order"; \
     done
 
     @echo "Updating System.map"
-    sudo eatmydata cp {{ _kernel_build_dir }}/System.map {{ _sysroot_dir }}/boot/System.map-{{ _kernel_version }}
+    eatmydata mkdir -p {{ _syskern_dir }}/boot
+    eatmydata cp {{ _kernel_build_dir }}/System.map {{ _syskern_dir }}/boot/System.map-{{ _kernel_version }}
 
     @echo "Updating module dependencies"
-    sudo eatmydata systemd-nspawn -D {{ _sysroot_dir }} eatmydata depmod \
+    eatmydata depmod -b {{ _syskern_dir }} \
       --errsyms \
       --all \
-      --filesyms /boot/System.map-{{ _kernel_version }} \
+      --filesyms {{ _syskern_dir }}/boot/System.map-{{ _kernel_version }} \
       {{ _kernel_version }}
 
     @echo "Copying kernel headers"
+    eatmydata mkdir -p {{ _syskern_dir }}/usr/src/linux-headers-{{ _kernel_version }}
     eatmydata mkdir -p unpack/kernel_headers
     eatmydata tar \
       -xvzf {{ _kernel_build_dir }}/kernel-headers.tar.gz \
       -C unpack/kernel_headers
-    sudo eatmydata cp -r unpack/kernel_headers {{ _sysroot_dir }}/usr/src/linux-headers-{{ _kernel_version }}
-    sudo eatmydata ln -rsf {{ _sysroot_dir }}/usr/src/linux-headers-{{ _kernel_version }} {{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/build
-    sudo eatmydata cp {{ _kernel_build_dir }}/kernel_aarch64_Module.symvers {{ _sysroot_dir }}/usr/src/linux-headers-{{ _kernel_version }}/
-    sudo eatmydata cp {{ _kernel_build_dir }}/vmlinux.symvers {{ _sysroot_dir }}/usr/src/linux-headers-{{ _kernel_version }}/
+    eatmydata cp -r unpack/kernel_headers {{ _syskern_dir }}/usr/src/linux-headers-{{ _kernel_version }}
+    eatmydata ln -rsf {{ _syskern_dir }}/usr/src/linux-headers-{{ _kernel_version }} {{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/build
+    eatmydata cp {{ _kernel_build_dir }}/kernel_aarch64_Module.symvers {{ _syskern_dir }}/usr/src/linux-headers-{{ _kernel_version }}/
+    eatmydata cp {{ _kernel_build_dir }}/vmlinux.symvers {{ _syskern_dir }}/usr/src/linux-headers-{{ _kernel_version }}/
 
     @echo "Setting systemd module load order"
     rm -f {{ _module_order_path }}
 
     cat {{ _kernel_build_dir }}/vendor_kernel_boot.modules.load | xargs -I {} \
-      modinfo -b {{ _sysroot_dir }} -k {{ _kernel_version }} -F name "{{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/{}" \
+      modinfo -b {{ _syskern_dir }} -k {{ _kernel_version }} -F name "{{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/{}" \
       > {{ _module_order_path }}
     cat {{ _kernel_build_dir }}/vendor_dlkm.modules.load | xargs -I {} \
-      modinfo -b {{ _sysroot_dir }} -k {{ _kernel_version }} -F name "{{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/{}" \
+      modinfo -b {{ _syskern_dir }} -k {{ _kernel_version }} -F name "{{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/{}" \
       >> {{ _module_order_path }}
     cat {{ _kernel_build_dir }}/system_dlkm.modules.load | xargs -I {} \
-      modinfo -b {{ _sysroot_dir }} -k {{ _kernel_version }} -F name "{{ _sysroot_dir }}/lib/modules/{{ _kernel_version }}/{}" \
+      modinfo -b {{ _syskern_dir }} -k {{ _kernel_version }} -F name "{{ _syskern_dir }}/usr/lib/modules/{{ _kernel_version }}/{}" \
       >> {{ _module_order_path }}
+    eatmydata mkdir -p {{ _syskern_dir }}/usr/lib/dracut/dracut.conf.d
+    eatmydata cp {{ _kernel_build_dir }}/Image.lz4 {{ _syskern_dir }}/boot/vmlinuz-{{ _kernel_version }}
+    eatmydata cp {{ _kernel_build_dir }}/dtb.img {{ _syskern_dir }}/boot/{{ _kernel_version }}.dtb
+    echo force_drivers+=\" $(cat {{ _module_order_path }}) \" > {{ _syskern_dir }}/usr/lib/dracut/dracut.conf.d/kernel.conf
+    echo compress=\"lz4\" >> {{ _syskern_dir }}/usr/lib/dracut/dracut.conf.d/kernel.conf
+    rm -f {{ _syskern_dir }}/lib
+    rmdir {{ _syskern_dir }}/usr/etc
+    tar --owner=root --group=root -cvf {{ _kernel_tar }} -C {{ _syskern_dir }} .
 
 [private]
 _initramfs_path := join(_sysroot_dir, "boot", "initrd.img-" + _kernel_version)
-[private]
-_module_order := replace(read(_module_order_path), "\n", " ")
 
 # TODO: Fix for proper root password (/etc/shadow) maybe with some post service
 # Add other user (kalm)
@@ -181,18 +196,6 @@ _module_order := replace(read(_module_order_path), "\n", " ")
 # cat /sys/class/power_supply/battery/capacity
 # ADD AOC.bin thing...
 # userdata fstab? mkfs if it doesn't have an image...
-
-[group('rootfs')]
-[working-directory('rootfs')]
-update_initramfs: 
-    sudo eatmydata systemd-nspawn -D {{ _sysroot_dir }} eatmydata dracut \
-      --kver {{ _kernel_version }} \
-      --lz4 \
-      --show-modules \
-      --force \
-      --add "rescue bash" \
-      --kernel-cmdline "rd.shell" \
-      --force-drivers "{{ _module_order }}"
 
 [group('rootfs')]
 [working-directory('boot')]
@@ -206,6 +209,7 @@ create_rootfs_image size="4GiB":
 _create_rootfs_image size="4GiB":
     sudo eatmydata rm -f {{ _sysroot_img }}
     sudo eatmydata fallocate -l {{ size }} {{ _sysroot_img }}
+    sudo eatmydata rm -rf --one-file-system {{ _sysroot_dir }}
     eatmydata mkdir {{ _sysroot_dir }}
     touch {{ _create_rootfs_sentinel }}
 
@@ -213,7 +217,7 @@ _create_rootfs_image size="4GiB":
 [working-directory('boot')]
 build_boot_images: 
     sudo eatmydata {{ _mkbootimg }} \
-      --kernel {{ _kernel_build_dir }}/Image.lz4 \
+      --kernel {{ _sysroot_dir }}/boot/vmlinuz-{{ _kernel_version }} \
       --cmdline "root=/dev/disk/by-partlabel/super" \
       --header_version 4 \
       -o boot.img \
@@ -224,7 +228,7 @@ build_boot_images:
     sudo eatmydata {{ _mkbootimg }} \
       --ramdisk_name "" \
       --vendor_ramdisk_fragment {{ _initramfs_path }} \
-      --dtb {{ _kernel_build_dir }}/dtb.img \
+      --dtb {{ _sysroot_dir }}/boot/{{ _kernel_version }}.dtb \
       --header_version 4 \
       --vendor_boot vendor_boot.img \
       --pagesize 2048 \
