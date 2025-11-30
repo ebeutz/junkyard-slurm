@@ -42,7 +42,7 @@ jobs:
           sudo rm -f /var/lib/man-db/auto-update
           sudo apt update
           eatmydata wget 'http://ftp.us.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb'
-          sudo eatmydata apt install -y btrfs-progs systemd-container mmdebstrap $GITHUB_WORKSPACE/debian-archive-keyring_2025.1_all.deb
+          sudo eatmydata apt install -y btrfs-progs mmdebstrap $GITHUB_WORKSPACE/debian-archive-keyring_2025.1_all.deb
           sudo eatmydata cp just/just-arm64 /usr/bin/just
 
       # Download kernel build

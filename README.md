@@ -5,6 +5,15 @@ Automated flow for
 * Building initramfs
 * TODO: etc...
 
+## TLDR:
+* Click on the `Actions` tab
+* Download the artifacts for the latest `build-image` run.
+* Download the metadata.img from the root of this repo if you're not applying customizations.
+* `fastboot flash` boot, vendor_boot, super (rootfs.img), metadata
+* Reboot phone and use `adb shell` to setup Wi-Fi/networking/etc.
+* Or, alternatively connect a keyboard and use that (a console is included).
+
+
 ## Requirements to kernel/images:
 For both kernel/image building:
 * [just](https://github.com/casey/just)
@@ -20,23 +29,21 @@ For only image building:
 * arm64 system can be used to build images, qemu-user-static required for x86_64 to build images
 * Debian stable
 * mmdebstrap
-* systemd-nspawn
 * btrfs-progs
 * fallocate
 * Kernel tar in kernel/kernel.tar (either build it or download latest kernel artifact if you're just playing with the image)
 
 ## TODO
-* Proper fstab
-* Dedicated phone/server for automatically building everything natively
-* Mount vendor partition (and other partitions by label)
-* DISABLE SLEEP WHEN SHUT
 * Module blacklisting
+
+## Customizing image
+On first boot, the `setup` program will be ran once. By default, it does nothing. However, you can change the contents of the `customize` folder and then run the `customize.sh` to regenerate the `metadata.img`, without having to (re)build images. You can then flash it using `fastboot flash metadata metadata.img` and all your customizations will be ran on first boot. This is useful for provisioning multiple devices with unique  configuations, keys, hostnames, etc out of one system and kernel image. If the setup program is ran, the partiton will remain mounted read-only in `/mnt/metadata`.
 
 ## Customizing Kernel
 Add/remove kernel modules in the defconfig fragment [custom_defconfig](kernel/custom_defconfig_mod/custom_defconfig). You may have to first add/remove modules manually with something like `nconfig` to see which other dependent modules also need to be added.
 
 ## Installing Additional Debian/Ubuntu Apt Packages
-Add/remove packages in [packages.txt](rootfs/packages.txt). **Specify one package per-line**.
+Add/remove packages in [packages.txt](rootfs/packages.txt). **Specify one package per-line**. You can alternatively use a customization script to setup networking and automatically install packages, without having to (re)build an image.
 
 ## Building
 ```shell
@@ -51,5 +58,5 @@ eatmydata will speed things up greatly on any disk I/O bound operations (such as
 
 ## Flashing
 * Flash clean android @ _link_
-* flash new boot, vendor_boot, super
+* flash new boot, vendor_boot, super, metadata
 * fastboot oem disable-verity && fastboot oem disable-verification
