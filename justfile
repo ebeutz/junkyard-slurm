@@ -99,7 +99,7 @@ _build_rootfs debootstrap_release root_password hostname size:
         -e 's/^#HandleLidSwitchDocked=.*/HandleLidSwitchDocked=ignore/' \
         \"\$1/etc/systemd/logind.conf\"" \
       --customize-hook='mkdir -p "$1/etc/systemd/system/kmsconvt@.service.d" && printf "[Service]\nExecStart=\nExecStart=/usr/bin/kmscon \"--vt=%%I\" --seats=seat0 --no-switchvt --login -- /sbin/agetty -a kalm - xterm-256color\n" > "$1/etc/systemd/system/kmsconvt@.service.d/override.conf"' \
-      --customize-hook='mkdir -p "$1/etc/systemd/system/adbd.service.d" && printf "[Unit]\nWants=sys-kernel-config.mount\nAfter=\n" > "$1/etc/systemd/system/adbd.service.d/override.conf"' \
+      --customize-hook='mkdir -p "$1/etc/systemd/system/adbd.service.d" && printf "[Unit]\nWants=sys-kernel-config.mount\nAfter=\n\n[Service]\nSocketBindDeny=tcp:5555\n" > "$1/etc/systemd/system/adbd.service.d/override.conf"' \
       --customize-hook='ln -s /dev/null "$1/etc/systemd/system/systemd-backlight@.service"' \
       --customize-hook='chroot "$1" dracut --kver {{ _kernel_version }} --show-modules --force' \
       {{ _sysroot_dir }}

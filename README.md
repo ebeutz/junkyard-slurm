@@ -12,7 +12,7 @@ Automated flow for
 * `fastboot flash` boot, vendor_boot, super (rootfs.img), metadata
 * Reboot phone and use `adb shell` to setup Wi-Fi/networking/etc.
 * Or, alternatively connect a keyboard and use that (a console is included).
-
+* Or, connect a network adapter and ssh to the phone. Add network configuations to your customization script or use tools like `nmap`, `arp -a`, or your router's configuration page to find out what IP it was assigned by DHCP.
 
 ## Requirements to kernel/images:
 For both kernel/image building:
